@@ -1,10 +1,56 @@
-/.venv
+# =========================
+# Python
+# =========================
+/.venv/
+/venv/
+__pycache__/
+*.py[cod]
+*.pyo
+.pytest_cache/
+.mypy_cache/
+
+# =========================
+# .NET / Visual Studio
+# =========================
+**/[Bb]in/
+**/[Oo]bj/
+.vs/
+*.user
+*.rsuser
+*.suo
+*.userosscache
+*.sln.docstates
+
+# =========================
+# Editors / OS
+# =========================
+.vscode/settings.json
+.DS_Store
+Thumbs.db
+
+# =========================
+# Logs / temp
+# =========================
+*.log
+*.tmp
+
+# =========================
+# Local environment / secrets
+# =========================
+src/api/appsettings.Development.json
+
+# =========================
+# Large input/output data
+# =========================
+*.parquet
+transactions_*.csv
+fondos_*.csv
+
+# =========================
+# Files explicitly excluded in this repo
+# =========================
 /context.txt
-/fondos_500mb.parquet
 /Idempotencia.txt
 /metadata.txt
 /plan.md
 /Prueba Desarrollador Backend nuevo 2026.pdf
-/scripts
-/src
-/TransactionCloseExchange.sln
