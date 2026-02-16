@@ -62,8 +62,10 @@ public sealed class PortfolioProcessWorker : BackgroundService
 		{
 			var sourcePath = ResolvePath(process.SourcePath);
 			var sourceHash = ComputeFileHash(sourcePath);
+			await _repository.UpdateRunningMessageAsync(processId, "ETL en curso: preparando lectura y carga a staging", cancellationToken);
 
 			var metrics = await ExecuteEtlAsync(processId, sourcePath, sourceHash, process.SourceSystem, cancellationToken);
+			await _repository.UpdateRunningMessageAsync(processId, "ETL finalizado: iniciando merge staging -> producción", cancellationToken);
 			var mergeResult = await _repository.MergeToProductionAsync(processId, cancellationToken);
 
 			var message = $"Merge completado. Insertados: {mergeResult.InsertedCount}, Actualizados: {mergeResult.UpdatedCount}";
@@ -117,23 +119,62 @@ public sealed class PortfolioProcessWorker : BackgroundService
 		using var process = Process.Start(startInfo)
 			?? throw new InvalidOperationException("No fue posible iniciar el proceso Python.");
 
-		var stdout = await process.StandardOutput.ReadToEndAsync(cancellationToken);
-		var stderr = await process.StandardError.ReadToEndAsync(cancellationToken);
+		var stdoutLines = new List<string>();
+		var stderrLines = new List<string>();
+
+		var stdoutTask = ConsumeStreamAsync(
+			process.StandardOutput,
+			async line =>
+			{
+				stdoutLines.Add(line);
+				_logger.LogInformation("ETL[{ProcessId}] {Line}", processId, line);
+
+				if (line.StartsWith("PROGRESS ", StringComparison.OrdinalIgnoreCase))
+				{
+					var message = line.Replace("PROGRESS ", string.Empty, StringComparison.OrdinalIgnoreCase);
+					await _repository.UpdateRunningMessageAsync(processId, $"ETL en curso: {message}", cancellationToken);
+				}
+			},
+			cancellationToken);
+
+		var stderrTask = ConsumeStreamAsync(
+			process.StandardError,
+			line =>
+			{
+				stderrLines.Add(line);
+				_logger.LogWarning("ETL[{ProcessId}] {Line}", processId, line);
+				return Task.CompletedTask;
+			},
+			cancellationToken);
+
 		await process.WaitForExitAsync(cancellationToken);
+		await Task.WhenAll(stdoutTask, stderrTask);
 
 		if (process.ExitCode != 0)
 		{
+			var stderr = string.Join(Environment.NewLine, stderrLines);
 			throw new InvalidOperationException($"ETL Python falló con código {process.ExitCode}: {stderr}");
 		}
 
-		var jsonLine = stdout
-			.Split(Environment.NewLine, StringSplitOptions.RemoveEmptyEntries)
+		var jsonLine = stdoutLines
 			.LastOrDefault() ?? throw new InvalidOperationException("ETL no devolvió métricas en JSON.");
 
 		var metrics = JsonSerializer.Deserialize<EtlMetrics>(jsonLine, _jsonOptions)
 			?? throw new InvalidOperationException("No fue posible deserializar métricas ETL.");
 
 		return metrics;
+	}
+
+	private static async Task ConsumeStreamAsync(StreamReader reader, Func<string, Task> onLine, CancellationToken cancellationToken)
+	{
+		while (!reader.EndOfStream && !cancellationToken.IsCancellationRequested)
+		{
+			var line = await reader.ReadLineAsync(cancellationToken);
+			if (!string.IsNullOrWhiteSpace(line))
+			{
+				await onLine(line);
+			}
+		}
 	}
 
 	private string ResolvePath(string path)

@@ -265,6 +265,14 @@ def run_etl(
             metrics.rows_loaded += len(rows)
             metrics.rows_rejected += chunk.height - len(rows)
             conn.commit()
+
+            print(
+                f"PROGRESS rows_read={metrics.rows_read} "
+                f"rows_loaded={metrics.rows_loaded} "
+                f"rows_rejected={metrics.rows_rejected}",
+                flush=True,
+            )
+
             offset += chunk_size
 
     return metrics

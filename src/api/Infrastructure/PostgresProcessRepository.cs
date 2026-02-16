@@ -106,6 +106,23 @@ public sealed class PostgresProcessRepository : IProcessRepository
         return affected == 1;
     }
 
+    public async Task UpdateRunningMessageAsync(Guid processId, string message, CancellationToken cancellationToken)
+    {
+        const string sql = """
+            UPDATE process_control
+            SET message = @message
+            WHERE process_id = @process_id
+              AND status = 'Running';
+            """;
+
+        await using var conn = await _dataSource.OpenConnectionAsync(cancellationToken);
+        await using var cmd = new NpgsqlCommand(sql, conn);
+        cmd.Parameters.AddWithValue("process_id", processId);
+        cmd.Parameters.AddWithValue("message", message);
+
+        await cmd.ExecuteNonQueryAsync(cancellationToken);
+    }
+
     public async Task MarkCompletedAsync(
         Guid processId,
         long rowsRead,
